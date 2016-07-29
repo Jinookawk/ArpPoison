@@ -19,26 +19,9 @@ typedef struct arphdr {
     u_int16_t oper;     /* Operation Code          */
     u_char sha[6];      /* Sender hardware address */
     u_char spa[4];      /* Sender IP address       */
-    //struct in_addr spa;
     u_char tha[6];      /* Target hardware address */
     u_char tpa[4];      /* Target IP address       */
-    //struct in_addr tpa;
 }arphdr_t;
-
-#define MAXBYTES2CAPTURE 2048
-
-//debug define
-#define DEBUG_LEVEL_	3
-
-#ifdef  DEBUG_LEVEL_
-#define dp(n, fmt, args...)	if (DEBUG_LEVEL_ <= n) fprintf(stderr, "%s:%d,"fmt, __FILE__, __LINE__, ## args)
-#define dp0(n, fmt)		if (DEBUG_LEVEL_ <= n) fprintf(stderr, "%s:%d,"fmt, __FILE__, __LINE__)
-#define _dp(n, fmt, args...)	if (DEBUG_LEVEL_ <= n) fprintf(stderr, " "fmt, ## args)
-#else	/* DEBUG_LEVEL_ */
-#define dp(n, fmt, args...)
-#define dp0(n, fmt)
-#define _dp(n, fmt, args...)
-#endif	/* DEBUG_LEVEL_ */
 
 #define MAX_STR_LEN 4000
 
@@ -61,7 +44,7 @@ int getIPAddress(char *ip_addr)
     sock = socket(AF_INET, SOCK_STREAM, 0);
     if (sock < 0)
     {
-        dp(4, "socket");
+        printf("Cannot open socket\n");
         return 0;
     }
 
@@ -69,7 +52,7 @@ int getIPAddress(char *ip_addr)
     strcpy(ifr.ifr_name, "ens33");
     if (ioctl(sock, SIOCGIFADDR, &ifr)< 0)
     {
-        dp(4, "ioctl() - get ip");
+        printf("Error\n");
         close(sock);
         return 0;
     }
@@ -89,14 +72,14 @@ int getMyMacAddress(unsigned char *mac)
     sock = socket(AF_INET, SOCK_STREAM, 0);
     if (sock < 0)
     {
-        dp(4, "socket");
+        printf("Cannot open socket\n");
         return 0;
     }
 
     strcpy(ifr.ifr_name, "ens33");
     if (ioctl(sock, SIOCGIFHWADDR, &ifr)< 0)
     {
-        dp(4, "ioctl() - get mac");
+        printf("Error\n");
         close(sock);
         return 0;
     }
@@ -167,6 +150,71 @@ char* getGatewayIP(){
     pclose(in);
 
     return gateway;
+}
+
+void getMacAddress(u_char *mymac, char *myip, char *ip_v, pcap_t *descr, u_char *mac_v){
+    struct pcap_pkthdr* pkthdr;
+    u_char* data;
+
+    struct libnet_ethernet_hdr etherhdr;
+    arphdr_t arphdr;
+    u_char packet[100];
+    int res;
+
+    for(int i=0; i<6; i++){
+        etherhdr.ether_dhost[i]=0xFF;
+    }
+
+    for(int i=0;i<6;i++){
+        etherhdr.ether_shost[i]=mymac[i];
+    }
+
+    etherhdr.ether_type=htons(ETHERTYPE_ARP);
+
+    arphdr.htype=htons(1);
+    arphdr.ptype=htons(ETHERTYPE_IP);
+    arphdr.hlen=0x06;
+    arphdr.plen=0x04;
+    arphdr.oper=htons(ARP_REQUEST);
+    for(int i=0;i<6;i++){
+        arphdr.sha[i]=mymac[i];
+    }
+    inet_pton(AF_INET, myip, arphdr.spa);
+    for(int i=0;i<6;i++){
+        arphdr.tha[i]=0x00;
+    }
+    inet_pton(AF_INET, ip_v, arphdr.tpa);
+
+    memcpy(packet, (void *)&etherhdr, sizeof(struct libnet_ethernet_hdr));
+    memcpy(packet+sizeof(struct libnet_ethernet_hdr), (void *)&arphdr, sizeof(arphdr_t));
+
+    if(pcap_sendpacket(descr, packet, 42) != 0){
+        fprintf(stderr,"\n Error sending the packet: %s\n", pcap_geterr(descr));
+        exit(-1);
+    }
+
+    while((res=pcap_next_ex(descr, &pkthdr, (const u_char**)&data))>=0){
+        if(res==0)
+            continue;
+
+        struct libnet_ethernet_hdr *etherhdr_data;
+        arphdr_t *arphdr_data;
+        char buf[20];
+
+        etherhdr_data = (struct libnet_ethernet_hdr*)(data);
+        data += sizeof(struct libnet_ethernet_hdr);
+
+        arphdr_data = (arphdr_t*)(data);
+
+        if (ntohs(etherhdr_data->ether_type) == ETHERTYPE_ARP){
+            inet_ntop(AF_INET, arphdr_data->spa, buf, sizeof(buf));
+            if(!strcmp(buf, ip_v)){
+                for(int i=0;i<6;i++)
+                    mac_v[i]=arphdr_data->sha[i];
+                break;
+            }
+        }
+    }
 }
 
 void *sendPoisonGateway(void *data){
@@ -274,9 +322,6 @@ int main(int argc, char *argv[])
     char ip[20];
     u_char mac[20];
 
-    struct libnet_ethernet_hdr etherhdr;
-    arphdr_t arphdr;
-
     struct pcap_pkthdr* pkthdr;
     u_char* data;
     int res;
@@ -313,60 +358,7 @@ int main(int argc, char *argv[])
     getMyMacAddress(mac);
     gatewayip=getGatewayIP();
 
-    for(int i=0; i<6; i++){
-        etherhdr.ether_dhost[i]=0xFF;
-    }
-
-    for(int i=0;i<6;i++){
-        etherhdr.ether_shost[i]=mac[i];
-    }
-
-    etherhdr.ether_type=htons(ETHERTYPE_ARP);
-
-    arphdr.htype=htons(1);
-    arphdr.ptype=htons(ETHERTYPE_IP);
-    arphdr.hlen=0x06;
-    arphdr.plen=0x04;
-    arphdr.oper=htons(ARP_REQUEST);
-    for(int i=0;i<6;i++){
-        arphdr.sha[i]=mac[i];
-    }
-    inet_pton(AF_INET, ip, arphdr.spa);
-    for(int i=0;i<6;i++){
-        arphdr.tha[i]=0x00;
-    }
-    inet_pton(AF_INET, argv[1], arphdr.tpa);
-
-    memcpy(packet, (void *)&etherhdr, sizeof(struct libnet_ethernet_hdr));
-    memcpy(packet+sizeof(struct libnet_ethernet_hdr), (void *)&arphdr, sizeof(arphdr_t));
-
-    if(pcap_sendpacket(descr, packet, 42) != 0){
-        fprintf(stderr,"\n Error sending the packet: %s\n", pcap_geterr(descr));
-        return -1;
-    }
-
-    while((res=pcap_next_ex(descr, &pkthdr, (const u_char**)&data))>=0){
-        if(res==0)
-            continue;
-
-        struct libnet_ethernet_hdr *etherhdr;
-        arphdr_t *arphdr;
-        char buf[20];
-
-        etherhdr = (struct libnet_ethernet_hdr*)(data);
-        data += sizeof(struct libnet_ethernet_hdr);
-
-        arphdr = (arphdr_t*)(data);
-
-        if (ntohs(etherhdr->ether_type) == ETHERTYPE_ARP){
-            inet_ntop(AF_INET, arphdr->spa, buf, sizeof(buf));
-            if(!strcmp(buf, argv[1])){
-                for(int i=0;i<6;i++)
-                    vmac[i]=arphdr->sha[i];
-                break;
-            }
-        }
-    }
+    getMacAddress(mac, ip, argv[1], descr, vmac);
 
     printf("Victim MAC Address: ");
     for (int i = 0; i < 6; i++){
@@ -377,62 +369,7 @@ int main(int argc, char *argv[])
             printf(":");
     }
 
-    //////////////////////////////////////////////////////
-
-    for(int i=0; i<6; i++){
-        etherhdr.ether_dhost[i]=0xFF;
-    }
-
-    for(int i=0;i<6;i++){
-        etherhdr.ether_shost[i]=mac[i];
-    }
-
-    etherhdr.ether_type=htons(ETHERTYPE_ARP);
-
-    arphdr.htype=htons(1);
-    arphdr.ptype=htons(ETHERTYPE_IP);
-    arphdr.hlen=0x06;
-    arphdr.plen=0x04;
-    arphdr.oper=htons(ARP_REQUEST);
-    for(int i=0;i<6;i++){
-        arphdr.sha[i]=mac[i];
-    }
-    inet_pton(AF_INET, ip, arphdr.spa);
-    for(int i=0;i<6;i++){
-        arphdr.tha[i]=0x00;
-    }
-    inet_pton(AF_INET, gatewayip, arphdr.tpa);
-
-    memcpy(packet, (void *)&etherhdr, sizeof(struct libnet_ethernet_hdr));
-    memcpy(packet+sizeof(struct libnet_ethernet_hdr), (void *)&arphdr, sizeof(arphdr_t));
-
-    if(pcap_sendpacket(descr, packet, 42) != 0){
-        fprintf(stderr,"\n Error sending the packet: %s\n", pcap_geterr(descr));
-        return -1;
-    }
-
-    while((res=pcap_next_ex(descr, &pkthdr, (const u_char**)&data))>=0){
-        if(res==0)
-            continue;
-
-        struct libnet_ethernet_hdr *etherhdr;
-        arphdr_t *arphdr;
-        char buf[20];
-
-        etherhdr = (struct libnet_ethernet_hdr*)(data);
-        data += sizeof(struct libnet_ethernet_hdr);
-
-        arphdr = (arphdr_t*)(data);
-
-        if (ntohs(etherhdr->ether_type) == ETHERTYPE_ARP){
-            inet_ntop(AF_INET, arphdr->spa, buf, sizeof(buf));
-            if(!strcmp(buf, gatewayip)){
-                for(int i=0;i<6;i++)
-                    gmac[i]=arphdr->sha[i];
-                break;
-            }
-        }
-    }
+    getMacAddress(mac, ip, gatewayip, descr, gmac);
 
     printf("Gateway MAC Address: ");
     for (int i = 0; i < 6; i++){
